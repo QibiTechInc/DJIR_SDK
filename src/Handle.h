@@ -8,6 +8,9 @@
 #include <mutex>
 #include <condition_variable>
 #include <queue>
+#include <string>
+#include <cstdint>
+#include <atomic>
 
 #if (defined _WIN32 && defined RF62X_LIBRARY)
 #define API_EXPORT __declspec(dllexport)
@@ -27,6 +30,7 @@ public:
 
     void add_cmd(std::vector<uint8_t> cmd);
 
+    void clear_position();
     bool get_position(int16_t& yaw, int16_t& roll, int16_t& pitch, uint16_t timeout_ms);
 
 private:
@@ -35,7 +39,7 @@ private:
     bool _check_head_crc(std::vector<uint8_t> data);
     bool _check_pack_crc(std::vector<uint8_t> data);
     std::thread _thread;
-    bool _stopped = false;
+    std::atomic<bool> _stopped;
     void* _dev;
     std::vector<std::string> _rsps;
     std::mutex _rdcontent_lock;

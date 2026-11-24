@@ -5,6 +5,7 @@
 #include <string>
 #include <iostream>
 #include <vector>
+#include <cstdint>
 
 #if (defined _WIN32 && defined RF62X_LIBRARY)
 #define API_EXPORT __declspec(dllexport)

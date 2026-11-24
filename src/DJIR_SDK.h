@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <vector>
+#include <string>
 
 #if (defined _WIN32 && defined RF62X_LIBRARY)
 #define API_EXPORT __declspec(dllexport)
@@ -49,10 +50,11 @@ public:
     ~DJIRonin();
 
     /**
-     * @brief connect - Connect to DJI Ronin device
+     * @brief connect - Connect to DJI Ronin device via Linux SocketCAN
+     * @param can_interface SocketCAN interface name (must be up at 1 Mbit/s)
      * @return True if success
      */
-    bool connect();
+    bool connect(const std::string& can_interface = "can0");
     /**
      * @brief disconnect - Disconnect from DJI Ronin device
      * @return True if success

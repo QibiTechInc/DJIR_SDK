@@ -1,27 +1,36 @@
 #include "Handle.h"
 
-#include "USBCAN_SDK.h"
+#include "SocketCAN.h"
 #include "custom_crc16.h"
 #include "custom_crc32.h"
 
 DJIR_SDK::DataHandle::DataHandle(void *can_connection)
 {
-    _stopped = false;
+    _stopped = true;
     _input_position_ready_flag = false;
     _dev = can_connection;
     _cmd_list = std::vector<std::vector<uint8_t>>();
     _rsps = std::vector<std::string>();
 }
 
+DJIR_SDK::DataHandle::~DataHandle()
+{
+    stop();
+}
+
 void DJIR_SDK::DataHandle::start()
 {
+    if (_thread.joinable())
+        return;
+    _stopped = false;
     _thread = std::thread(&DataHandle::run, this);
 }
 
 void DJIR_SDK::DataHandle::stop()
 {
     _stopped = true;
-    _thread.join();
+    if (_thread.joinable())
+        _thread.join();
 }
 
 void DJIR_SDK::DataHandle::add_cmd(std::vector<uint8_t> cmd)
@@ -31,6 +40,12 @@ void DJIR_SDK::DataHandle::add_cmd(std::vector<uint8_t> cmd)
     if (_cmd_list.size() > 10)
         _cmd_list.erase(_cmd_list.begin());
     _rdcontent_lock.unlock();
+}
+
+void DJIR_SDK::DataHandle::clear_position()
+{
+    std::lock_guard<std::mutex> lk(_input_position_mutex);
+    _input_position_ready_flag = false;
 }
 
 bool DJIR_SDK::DataHandle::get_position(int16_t &yaw, int16_t &roll, int16_t &pitch, uint16_t timeout_ms)
@@ -50,8 +65,6 @@ bool DJIR_SDK::DataHandle::get_position(int16_t &yaw, int16_t &roll, int16_t &pi
             return false;
         }
     }
-    lk.unlock();
-
     // Reset data ready flag.
     _input_position_ready_flag = false;
     yaw = _yaw;
@@ -67,10 +80,11 @@ void DJIR_SDK::DataHandle::run()
     int step = 0;
     std::string canid_raw_str = "";
     std::string canid_str = "";
-    USBCAN_SDK::CANConnection* dev = (USBCAN_SDK::CANConnection*)_dev;
+    SocketCAN* dev = (SocketCAN*)_dev;
     while (!_stopped)
     {
-        auto frame = dev->get_tunnel()->pop_data_from_recv_queue();
+        // Blocks up to 50 ms waiting for the next CAN frame from the gimbal.
+        auto frame = dev->recv_frame(50);
         for (size_t i = 0; i < frame.size(); i++)
         {
             if (step == 0)
@@ -90,7 +104,9 @@ void DJIR_SDK::DataHandle::run()
             {
                 pack_len |= ((int(frame[i]) & 0x3) << 8);
                 v1_pack_list.push_back(frame[i]);
-                step = 3;
+                step = (pack_len >= 16) ? 3 : 0;
+                if (step == 0)
+                    v1_pack_list.clear();
             }else if(step == 3)
             {
                 v1_pack_list.push_back(frame[i]);
@@ -122,8 +138,6 @@ void DJIR_SDK::DataHandle::run()
                 v1_pack_list.clear();
             }
         }
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 }
 
@@ -180,13 +194,17 @@ void DJIR_SDK::DataHandle::_process_cmd(std::vector<uint8_t> data)
 //            if (data[13] == 0x02)
 //                std::cout << "The current angle is joint angle\n" << std::endl;
 
-            _yaw = *(int16_t*)&data.data()[14];
-            _roll = *(int16_t*)&data.data()[16];
-            _pitch = *(int16_t*)&data.data()[18];
-
-//            std::cout << "yaw = " << _yaw << " roll = " << _roll << " pitch = " << _pitch << std::endl;
-
-            _input_position_ready_flag = true;
+            // DATA: [12]=CmdSet [13]=CmdID [14]=return code [15]=angle type
+            //       [16..17]=yaw [18..19]=roll [20..21]=pitch, then CRC32
+            if (data.size() < 26 || data[14] != 0x00)
+                break;
+            {
+                std::lock_guard<std::mutex> lk(_input_position_mutex);
+                _yaw = *(int16_t*)&data.data()[16];
+                _roll = *(int16_t*)&data.data()[18];
+                _pitch = *(int16_t*)&data.data()[20];
+                _input_position_ready_flag = true;
+            }
             _input_position_cond_var.notify_one();
 
 

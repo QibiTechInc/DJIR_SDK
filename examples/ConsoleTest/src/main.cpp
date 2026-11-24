@@ -8,8 +8,10 @@ using namespace DJIR_SDK;
 
 bool print_until_arrives(DJIRonin* gimbal, int16_t yaw, int16_t roll, int16_t pitch);
 
-int main(void)
+int main(int argc, char** argv)
 {
+    std::string can_interface = (argc > 1) ? argv[1] : "can0";
+
     std::cout << "###########################################" << std::endl;
     std::cout << "#                                         #" << std::endl;
     std::cout << "#          DJIR-SDK Test v1.0.0           #" << std::endl;
@@ -19,7 +21,14 @@ int main(void)
     DJIRonin gimbal = DJIRonin();
 
     // Connect to DJI Ronin Gimbal
-    gimbal.connect();
+    if (!gimbal.connect(can_interface))
+    {
+        std::cerr << "Failed to open SocketCAN interface " << can_interface
+                  << ". Bring it up with:\n  sudo ip link set " << can_interface
+                  << " up type can bitrate 1000000" << std::endl;
+        return 1;
+    }
+    std::cout << "Connected via " << can_interface << std::endl;
 
     // Select ABSOLUTE_CONTROL mode
     gimbal.set_move_mode(MoveMode::ABSOLUTE_CONTROL);
@@ -41,9 +50,8 @@ int main(void)
     gimbal.move_to(0, 0, 0, 2000);
     while (print_until_arrives(&gimbal, 0, 0, 0));
 
-    std::cout << "Press any key to continie...";
-    getchar();
-    return 1;
+    gimbal.disconnect();
+    return 0;
 }
 
 bool print_until_arrives(DJIRonin* gimbal, int16_t yaw, int16_t roll, int16_t pitch)

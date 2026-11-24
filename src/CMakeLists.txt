@@ -49,7 +49,6 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 ## LINK LIBRARIES
 ## linking all dependencies
 ###############################################################################
-find_package (Threads)
-target_link_libraries (${PROJECT_NAME} ${CMAKE_THREAD_LIBS_INIT})
-target_link_libraries (${PROJECT_NAME} PUBLIC USBCAN_SDK)
+find_package (Threads REQUIRED)
+target_link_libraries (${PROJECT_NAME} PUBLIC Threads::Threads)
 target_link_libraries (${PROJECT_NAME} PUBLIC custom_crc)

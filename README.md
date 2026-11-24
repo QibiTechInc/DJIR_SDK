@@ -30,6 +30,22 @@ git submodule update --init --recursive
 ```
 > We recommend to use a git client for downloading and Qt Creator for project building
 
+## LINUX (SOCKETCAN)
+The SDK talks to the gimbal through Linux SocketCAN, so any SocketCAN-capable USB-CAN adapter (gs_usb / candleLight, PEAK, etc.) works. No vendor SDK is required.
+
+```bash
+# Bring up the CAN interface at 1 Mbit/s (DJI R SDK bitrate)
+sudo ip link set can0 up type can bitrate 1000000
+
+# Build
+cmake -S . -B build && cmake --build build -j
+
+# Run the example (interface name is optional, defaults to can0)
+./build/bin/DJIR_ConsoleTest can0
+```
+
+In code, pass the interface name to `connect()`: `gimbal.connect("can0");`
+
 ## API DESCRIPTION
 The **DJIR_SDK** contains a description of just one class `DJIRonin` with simple interface for easy use:
 ```c++
@@ -43,7 +59,7 @@ public:
      * @brief connect - Connect to DJI Ronin device
      * @return True if success
      */
-    bool connect();
+    bool connect(const std::string& can_interface = "can0");
     /**
      * @brief disconnect - Disconnect from DJI Ronin device
      * @return True if success

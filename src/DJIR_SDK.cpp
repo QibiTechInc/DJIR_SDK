@@ -2,8 +2,7 @@
 #include "Handle.h"
 #include "CmdCombine.h"
 
-#include "USBCAN_SDK.h"
-using namespace USBCAN_SDK;
+#include "SocketCAN.h"
 
 enum FLAG : uint8_t {
     BIT1 = 0x01,
@@ -23,29 +22,49 @@ DJIR_SDK::DJIRonin::DJIRonin()
     _position_ctrl_byte |= BIT1; //MoveMode - ABSOLUTE_CONTROL
     _speed_ctrl_byte |= BIT3; //SpeedControl - DISABLED, FocalControl - DISABLED
     _cmd_cmb = new CmdCombine();
+    _can_conn = nullptr;
+    _pack_thread = nullptr;
 }
 
 DJIR_SDK::DJIRonin::~DJIRonin()
 {
-
+    disconnect();
+    delete (CmdCombine*)_cmd_cmb;
 }
 
-bool DJIR_SDK::DJIRonin::connect()
+bool DJIR_SDK::DJIRonin::connect(const std::string& can_interface)
 {
-    int send_id = 0x223;
-    int recv_id = 0x222;
+    uint32_t send_id = 0x223;
+    uint32_t recv_id = 0x222;
 
-    // Connect to DJIR gimbal
-    _can_conn = new CANConnection(send_id, recv_id);
+    disconnect();
+
+    // Connect to DJIR gimbal over SocketCAN
+    SocketCAN* can = new SocketCAN(send_id, recv_id, can_interface);
+    if (!can->open())
+    {
+        delete can;
+        return false;
+    }
+    _can_conn = can;
     _pack_thread = new DataHandle(_can_conn);
     ((DataHandle*)_pack_thread)->start();
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    return ((CANConnection*)_can_conn)->get_connection_status();
+    return true;
 }
 
 bool DJIR_SDK::DJIRonin::disconnect()
 {
+    if (_pack_thread)
+    {
+        ((DataHandle*)_pack_thread)->stop();
+        delete (DataHandle*)_pack_thread;
+        _pack_thread = nullptr;
+    }
+    if (_can_conn)
+    {
+        delete (SocketCAN*)_can_conn;
+        _can_conn = nullptr;
+    }
     return true;
 }
 
@@ -62,9 +81,11 @@ bool DJIR_SDK::DJIRonin::move_to(int16_t yaw, int16_t roll, int16_t pitch, uint1
         ((uint8_t*)&pitch)[0],((uint8_t*)&pitch)[1],
         _position_ctrl_byte, time
     };
+    if (!_can_conn || !_pack_thread)
+        return false;
     auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
     ((DataHandle*)_pack_thread)->add_cmd(cmd);
-    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
+    int ret = ((SocketCAN*)_can_conn)->send_cmd(cmd);
     if (ret > 0)
         return true;
     else
@@ -124,10 +145,12 @@ bool DJIR_SDK::DJIRonin::set_speed(uint16_t yaw, uint16_t roll, uint16_t pitch)
         ((uint8_t*)&pitch)[0],((uint8_t*)&pitch)[1],
         _speed_ctrl_byte
     };
+    if (!_can_conn || !_pack_thread)
+        return false;
     auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
     ((DataHandle*)_pack_thread)->add_cmd(cmd);
 
-    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
+    int ret = ((SocketCAN*)_can_conn)->send_cmd(cmd);
     if (ret > 0)
     {
         return true;
@@ -163,13 +186,16 @@ bool DJIR_SDK::DJIRonin::get_current_position(int16_t &yaw, int16_t &roll, int16
     {
         0x01
     };
+    if (!_can_conn || !_pack_thread)
+        return false;
     auto cmd = ((CmdCombine*)_cmd_cmb)->combine(cmd_type, cmd_set, cmd_id, data_payload);
     ((DataHandle*)_pack_thread)->add_cmd(cmd);
+    ((DataHandle*)_pack_thread)->clear_position();
 
-    int ret = ((CANConnection*)_can_conn)->send_cmd(cmd);
+    int ret = ((SocketCAN*)_can_conn)->send_cmd(cmd);
     if (ret > 0)
     {
-        return ((DataHandle*)_pack_thread)->get_position(yaw, roll, pitch, 1000);;
+        return ((DataHandle*)_pack_thread)->get_position(yaw, roll, pitch, 1000);
     }
     else
         return false;
