@@ -1,58 +1,71 @@
 #ifndef HANDLE_H
 #define HANDLE_H
 
-#include <thread>
-#include <chrono>
-#include <string.h>
-#include <vector>
-#include <mutex>
-#include <condition_variable>
-#include <queue>
-#include <string>
-#include <cstdint>
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <cstdint>
+#include <map>
+#include <mutex>
+#include <set>
+#include <thread>
+#include <vector>
 
-#if (defined _WIN32 && defined RF62X_LIBRARY)
-#define API_EXPORT __declspec(dllexport)
-#else
-#define API_EXPORT
-#endif
+#include "DJIR_SDK.h"
 
 namespace DJIR_SDK {
 
-API_EXPORT class DataHandle
+class SocketCAN;
+
+/**
+ * @brief Receive thread + request/reply matching for DJI R SDK packets.
+ *
+ * Replies are matched to requests by the 2-byte sequence number (bytes 8-9).
+ * Unsolicited packets from the gimbal (parameter push 0x0E/0x08 and auto
+ * calibration status 0x0E/0x10) are decoded and cached.
+ */
+class DataHandle
 {
 public:
-    DataHandle(void*);
+    explicit DataHandle(SocketCAN* can);
     ~DataHandle();
     void start();
     void stop();
 
-    void add_cmd(std::vector<uint8_t> cmd);
+    /// Send a packet built by CmdCombine. If reply != nullptr, wait up to
+    /// timeout_ms for the matching reply and store its full packet there.
+    bool request(const std::vector<uint8_t>& cmd, std::vector<uint8_t>* reply, int timeout_ms);
 
-    void clear_position();
-    bool get_position(int16_t& yaw, int16_t& roll, int16_t& pitch, uint16_t timeout_ms);
+    bool get_push_data(GimbalPushData& out);
+    CalibrationStatus get_calibration_status();
+    void fill_stats(LinkStats& stats);
 
 private:
     void run();
-    void _process_cmd(std::vector<uint8_t> data);
-    bool _check_head_crc(std::vector<uint8_t> data);
-    bool _check_pack_crc(std::vector<uint8_t> data);
+    void process_packet(const std::vector<uint8_t>& data);
+    static bool check_head_crc(const std::vector<uint8_t>& data);
+    static bool check_pack_crc(const std::vector<uint8_t>& data);
+    static uint16_t seq_of(const std::vector<uint8_t>& data);
+
+    SocketCAN* _can;
     std::thread _thread;
     std::atomic<bool> _stopped;
-    void* _dev;
-    std::vector<std::string> _rsps;
-    std::mutex _rdcontent_lock;
 
-    // get_position
-    std::mutex _input_position_mutex;
-    std::condition_variable _input_position_cond_var;
-    bool _input_position_ready_flag;
-    int16_t _yaw; int16_t _roll; int16_t _pitch;
+    std::mutex _mutex;
+    std::condition_variable _cv;
+    std::set<uint16_t> _waiting;                        // seqs awaiting reply
+    std::map<uint16_t, std::vector<uint8_t>> _replies;  // seq -> reply packet
 
-    std::vector<std::vector<uint8_t>> _cmd_list;
+    GimbalPushData _push;
+    CalibrationStatus _calib;
+
+    // statistics
+    uint64_t _tx_packets = 0, _tx_failures = 0, _rx_packets = 0;
+    uint64_t _crc_errors = 0, _timeouts = 0;
+    std::chrono::steady_clock::time_point _last_rx;
+    bool _any_rx = false;
 };
 
 }
 
-#endif //HANDLE
+#endif //HANDLE_H

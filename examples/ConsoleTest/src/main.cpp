@@ -18,7 +18,7 @@ int main(int argc, char** argv)
     std::cout << "#                                         #" << std::endl;
     std::cout << "###########################################" << std::endl;
 
-    DJIRonin gimbal = DJIRonin();
+    DJIRonin gimbal;
 
     // Connect to DJI Ronin Gimbal
     if (!gimbal.connect(can_interface))

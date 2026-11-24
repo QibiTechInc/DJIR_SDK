@@ -171,7 +171,7 @@ int main(void)
     std::cout << "#                                         #" << std::endl;
     std::cout << "###########################################" << std::endl;
 
-    DJIRonin gimbal = DJIRonin();
+    DJIRonin gimbal;
 
     // Connect to DJI Ronin Gimbal
     gimbal.connect();

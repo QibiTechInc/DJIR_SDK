@@ -1,0 +1,27 @@
+djir_driver:
+  ros__parameters:
+    can_interface: can0
+    # Order: yaw, roll, pitch
+    joint_names: [gimbal_yaw_joint, gimbal_roll_joint, gimbal_pitch_joint]
+    publish_rate: 50.0          # Hz, joint_states rate (polling) / max rate (push)
+    publish_attitude: true      # also publish ~/attitude (world-frame angles)
+    use_push: true              # use gimbal parameter push when available, else poll
+
+    # Position commands (~/joint_command)
+    # absolute (default): position = target joint angles; unchanged axes are not sent
+    # incremental: position = relative move; axes with 0 are not sent
+    # Changeable at runtime: ros2 param set /djir_driver command_mode incremental
+    #                    or: ros2 service call /djir_driver/set_absolute_mode std_srvs/srv/SetBool "{data: false}"
+    command_mode: absolute
+    default_move_time: 1.0      # s, used when no velocity is given
+    min_move_time: 0.1          # s (protocol resolution 0.1 s, max 25.5 s)
+    max_velocity: 0.0           # rad/s; >0 derives move time from distance (overrides default)
+    command_angle_limit: 3.14159  # rad, commands are clamped to +-this
+
+    # Velocity commands (~/velocity_command)
+    velocity_timeout: 0.5       # s without a new command -> stop and release speed control
+    max_command_velocity: 6.2832  # rad/s clamp (protocol max 360 deg/s)
+
+    reply_timeout_ms: 100
+    feedback_timeout: 1.0       # s, diagnostics error when feedback is older
+    reconnect_period: 2.0       # s between attempts to reopen the CAN socket
